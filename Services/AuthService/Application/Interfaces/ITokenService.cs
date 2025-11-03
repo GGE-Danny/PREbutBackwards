@@ -1,0 +1,9 @@
+﻿using AuthService.Domain.Entities;
+
+namespace AuthService.Application.Interfaces
+{
+    public interface ITokenService
+    {
+        string GenerateToken(ApplicationUser user, IEnumerable<string> roles);
+    }
+}
