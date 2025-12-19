@@ -11,7 +11,11 @@ namespace AuthService.Application.Services
     public class TokenService : ITokenService
     {
         private readonly IConfiguration _config;
-        public TokenService(IConfiguration config) => _config = config;
+
+        public TokenService(IConfiguration config)
+        {
+            _config = config;
+        }
 
         public string GenerateToken(ApplicationUser user, IEnumerable<string> roles)
         {
@@ -20,17 +24,21 @@ namespace AuthService.Application.Services
 
             var claims = new List<Claim>
             {
-                new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new(JwtRegisteredClaimNames.Email, user.Email ?? ""),
-                new(ClaimTypes.Name, user.UserName ?? "")
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
+                new Claim(ClaimTypes.Name, user.UserName ?? "")
             };
-            claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
+
+            foreach (var role in roles)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, role));
+            }
 
             var token = new JwtSecurityToken(
                 issuer: _config["Jwt:Issuer"],
                 audience: _config["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(int.Parse(_config["Jwt:ExpiresMinutes"] ?? "120")),
+                expires: DateTime.UtcNow.AddMinutes(int.Parse(_config["Jwt:ExpiresMinutes"]!)),
                 signingCredentials: creds
             );
 

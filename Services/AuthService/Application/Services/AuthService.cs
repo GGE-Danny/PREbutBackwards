@@ -59,5 +59,40 @@ namespace AuthService.Application.Services
 
             return new AuthResponseDto(token, user.Id.ToString(), user.Email!, roles);
         }
+
+        public async Task<bool> AssignRoleAsync(AssignRoleDto dto)
+        {
+            var user = await _users.FindByEmailAsync(dto.Email);
+            if (user == null)
+                throw new Exception("User not found");
+
+            // Check if role exists
+            if (!await _roles.RoleExistsAsync(dto.Role))
+                throw new Exception("Role does not exist");
+
+            // Add role
+            var result = await _users.AddToRoleAsync(user, dto.Role);
+            if (!result.Succeeded)
+                throw new Exception("Failed to assign role");
+
+            return true;
+        }
+
+        public async Task<UserInfoDto> GetUserInfoAsync(string userId)
+        {
+            var user = await _users.FindByIdAsync(userId);
+            if (user == null)
+                throw new Exception("User not found");
+
+            var roles = await _users.GetRolesAsync(user);
+
+            return new UserInfoDto(
+                user.Id.ToString(),
+                user.Email!,
+                roles
+            );
+        }
+
+
     }
 }

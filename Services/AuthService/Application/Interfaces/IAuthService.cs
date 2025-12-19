@@ -6,5 +6,11 @@ namespace AuthService.Application.Interfaces
     {
         Task<AuthResponseDto> RegisterAsync(RegisterUserDto dto);
         Task<AuthResponseDto> LoginAsync(LoginUserDto dto);
+
+        Task<bool> AssignRoleAsync(AssignRoleDto dto);
+
+        Task<UserInfoDto> GetUserInfoAsync(string userId);
+
+
     }
 }
