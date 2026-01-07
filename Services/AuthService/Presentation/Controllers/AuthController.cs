@@ -31,27 +31,44 @@ namespace AuthService.Presentation.Controllers
         }
 
         [HttpPost("assign-role")]
-     //   [Authorize(Roles = Roles.SuperAdmin)]
+        [Authorize(Roles = Roles.SuperAdmin)]
+        // [Authorize]
         public async Task<IActionResult> AssignRole(AssignRoleDto dto)
         {
             var result = await _auth.AssignRoleAsync(dto);
             return Ok(new { success = result, message = "Role assigned successfully" });
         }
 
-        [HttpGet("me")]
+        [HttpPost("remove-role")]
+         [Authorize(Roles = Roles.SuperAdmin)] // Only SuperAdmins should do this
        // [Authorize]
+        public async Task<IActionResult> RemoveRole(AssignRoleDto dto)
+        {
+            var result = await _auth.RemoveRoleAsync(dto);
+            return Ok(new { success = result, message = "Role removed successfully" });
+        }
+
+        //[HttpGet("me")]
+        //[Authorize]
+        //public IActionResult Me()
+        //{
+        //    // If you cleared the map in Step 2, use "sub". 
+        //    // Otherwise, Identity usually maps "sub" to ClaimTypes.NameIdentifier
+        //    var userId = User.FindFirstValue("sub") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        //    var email = User.FindFirstValue("email") ?? User.FindFirstValue(ClaimTypes.Email);
+        //    var roles = User.FindAll("role").Select(r => r.Value).ToList();
+
+        //    return Ok(new { userId, email, roles });
+        //}
+        [HttpGet("me")]
+        [Authorize]
         public IActionResult Me()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var email = User.FindFirstValue(ClaimTypes.Email);
-            var roles = User.FindAll(ClaimTypes.Role).Select(r => r.Value);
+            var roles = User.FindAll(ClaimTypes.Role).Select(r => r.Value).ToList();
 
-            return Ok(new
-            {
-                userId,
-                email,
-                roles
-            });
+            return Ok(new { userId, email, roles });
         }
 
 

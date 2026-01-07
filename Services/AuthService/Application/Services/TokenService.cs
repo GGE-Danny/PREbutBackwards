@@ -26,7 +26,7 @@ namespace AuthService.Application.Services
             {
                 new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
-                new Claim(ClaimTypes.Name, user.UserName ?? "")
+                new Claim("name", user.UserName ?? "")
             };
 
             foreach (var role in roles)

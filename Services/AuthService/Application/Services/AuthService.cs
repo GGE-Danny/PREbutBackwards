@@ -63,20 +63,42 @@ namespace AuthService.Application.Services
         public async Task<bool> AssignRoleAsync(AssignRoleDto dto)
         {
             var user = await _users.FindByEmailAsync(dto.Email);
-            if (user == null)
-                throw new Exception("User not found");
+            if (user == null) throw new Exception("User not found");
 
-            // Check if role exists
-            if (!await _roles.RoleExistsAsync(dto.Role))
-                throw new Exception("Role does not exist");
+            // Check if role exists in DB first
+            var roleExists = await _roles.RoleExistsAsync(dto.Role);
+            if (!roleExists) throw new Exception($"Role '{dto.Role}' does not exist in the system.");
 
-            // Add role
             var result = await _users.AddToRoleAsync(user, dto.Role);
             if (!result.Succeeded)
-                throw new Exception("Failed to assign role");
+            {
+                // Capture the specific Identity error (e.g., "User already in role")
+                var error = string.Join(", ", result.Errors.Select(e => e.Description));
+                throw new Exception($"Identity Error: {error}");
+            }
 
             return true;
         }
+
+        public async Task<bool> RemoveRoleAsync(AssignRoleDto dto)
+        {
+            var user = await _users.FindByEmailAsync(dto.Email);
+            if (user == null) throw new Exception("User not found");
+
+            // Check if the user actually has this role before trying to remove it
+            var hasRole = await _users.IsInRoleAsync(user, dto.Role);
+            if (!hasRole) throw new Exception("User does not have this role");
+
+            var result = await _users.RemoveFromRoleAsync(user, dto.Role);
+            if (!result.Succeeded)
+            {
+                var error = string.Join(", ", result.Errors.Select(e => e.Description));
+                throw new Exception($"Failed to remove role: {error}");
+            }
+
+            return true;
+        }
+
 
         public async Task<UserInfoDto> GetUserInfoAsync(string userId)
         {
