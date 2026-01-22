@@ -13,5 +13,7 @@ namespace SharedKernel.Constants
         public const string Sales = "sales";
         public const string Tenant = "tenant";
         public const string Support = "support";
+        public const string Owner = "owner";
+        public const string Agent = "agent";
     }
 }

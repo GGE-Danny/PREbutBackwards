@@ -118,7 +118,9 @@ async Task SeedSuperAdminAsync(WebApplication app)
         Roles.Manager,
         Roles.Sales,
         Roles.Tenant,
-        Roles.Support
+        Roles.Support,
+        Roles.Owner,      // add
+        Roles.Agent
     };
 
     foreach (var role in roles)

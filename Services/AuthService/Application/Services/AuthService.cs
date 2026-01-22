@@ -69,6 +69,9 @@ namespace AuthService.Application.Services
             var roleExists = await _roles.RoleExistsAsync(dto.Role);
             if (!roleExists) throw new Exception($"Role '{dto.Role}' does not exist in the system.");
 
+            if (await _users.IsInRoleAsync(user, dto.Role))
+                return true;
+
             var result = await _users.AddToRoleAsync(user, dto.Role);
             if (!result.Succeeded)
             {
