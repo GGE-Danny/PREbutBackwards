@@ -1,9 +1,10 @@
-﻿using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using TenantService.Application.DTOs;
 using TenantService.Domain.Entities;
+using TenantService.Infrastructure.Clients;
 using TenantService.Infrastructure.Persistence;
 
 namespace TenantService.Api.Controllers;
@@ -14,7 +15,14 @@ public class TenantMetersController : ControllerBase
 {
     private readonly TenantDbContext _db;
 
-    public TenantMetersController(TenantDbContext db) => _db = db;
+    private readonly IPropertyServiceClient _propertyClient;
+
+    public TenantMetersController(TenantDbContext db, IPropertyServiceClient propertyClient)
+    {
+        _db = db;
+        _propertyClient = propertyClient;
+    }
+
 
     private static bool IsTenant(ClaimsPrincipal user) => user.IsInRole("tenant");
 
@@ -53,22 +61,41 @@ public class TenantMetersController : ControllerBase
         if (!CanAccessTenant(tenantUserId))
             return Forbid();
 
-        // Optional but recommended: also prevent assigning meter for another tenant’s unit without staff access
-        // (already covered above)
+        // ✅ validate first (prevents corrupting history)
+        var ok = await _propertyClient.UnitBelongsToPropertyAsync(req.PropertyId, req.UnitId);
+        if (!ok)
+            return BadRequest("Unit does not belong to the provided PropertyId (or unit not accessible).");
 
-        // End any active meter for this unit + tenant
-        var active = await _db.TenantMeterAssociations
-            .Where(x => x.TenantUserId == tenantUserId && x.UnitId == req.UnitId && x.EndDate == null)
+        // ✅ idempotency: if same meter already active for this unit+tenant, return it
+        var alreadyActive = await _db.TenantMeterAssociations
+            .AsNoTracking()
+            .Where(x => x.UnitId == req.UnitId && x.EndDate == null && x.DeletedAt == null)
             .OrderByDescending(x => x.StartDate)
             .FirstOrDefaultAsync();
 
-        if (active != null)
+        if (alreadyActive != null &&
+            alreadyActive.TenantUserId == tenantUserId &&
+            alreadyActive.PropertyId == req.PropertyId &&
+            alreadyActive.MeterNumber == req.MeterNumber)
         {
-            var endDate = req.StartDate.AddDays(-1);
-            if (endDate < active.StartDate) endDate = req.StartDate; // safeguard
+            return Ok(ToResponse(alreadyActive));
+        }
 
-            active.EndDate = endDate;
-            active.UpdatedAt = DateTime.UtcNow;
+        // ✅ close any active meter for this UNIT (not just tenant)
+        var activeForUnit = await _db.TenantMeterAssociations
+            .Where(x => x.UnitId == req.UnitId && x.EndDate == null && x.DeletedAt == null)
+            .OrderByDescending(x => x.StartDate)
+            .FirstOrDefaultAsync();
+
+        if (activeForUnit != null)
+        {
+            // close on the day before new start (but don’t go before start)
+            var endDate = req.StartDate.AddDays(-1);
+            if (endDate < activeForUnit.StartDate)
+                endDate = req.StartDate;
+
+            activeForUnit.EndDate = endDate;
+            activeForUnit.UpdatedAt = DateTime.UtcNow;
         }
 
         var row = new TenantMeterAssociation
@@ -76,9 +103,9 @@ public class TenantMetersController : ControllerBase
             TenantUserId = tenantUserId,
             PropertyId = req.PropertyId,
             UnitId = req.UnitId,
-            MeterNumber = req.MeterNumber,
-            PoleNumber = req.PoleNumber,
-            Provider = req.Provider,
+            MeterNumber = req.MeterNumber.Trim(),
+            PoleNumber = req.PoleNumber?.Trim(),
+            Provider = req.Provider?.Trim(),
             StartDate = req.StartDate,
             EndDate = null
         };
@@ -89,10 +116,11 @@ public class TenantMetersController : ControllerBase
         return Ok(ToResponse(row));
     }
 
+
     // POST /api/v1/tenants/{tenantUserId}/meters/unassign?unitId={unitId}
-    [HttpPost("{tenantUserId:guid}/meters/unassign")]
+    [HttpPost("{tenantUserId:guid}/meters/{unitId:guid}/unassign")]
     [Authorize]
-    public async Task<IActionResult> Unassign(Guid tenantUserId, [FromQuery] Guid unitId, [FromBody] EndTenantMeterRequest req)
+    public async Task<IActionResult> Unassign(Guid tenantUserId, Guid unitId, [FromBody] EndTenantMeterRequest req)
     {
         if (!TryGetCallerUserId(out _))
             return Unauthorized("Invalid user id in token.");
@@ -101,11 +129,15 @@ public class TenantMetersController : ControllerBase
             return Forbid();
 
         var active = await _db.TenantMeterAssociations
-            .Where(x => x.TenantUserId == tenantUserId && x.UnitId == unitId && x.EndDate == null)
+            .Where(x => x.UnitId == unitId && x.EndDate == null && x.DeletedAt == null)
             .OrderByDescending(x => x.StartDate)
             .FirstOrDefaultAsync();
 
-        if (active is null) return NotFound("No active meter association found.");
+        if (active is null) return NotFound("No active meter association found for this unit.");
+
+        // If tenant is calling, enforce they can only unassign THEIR active row
+        if (IsTenant(User) && active.TenantUserId != tenantUserId)
+            return Forbid("You cannot unassign a meter for another tenant.");
 
         if (req.EndDate < active.StartDate)
             return BadRequest("EndDate cannot be before StartDate.");
@@ -116,6 +148,7 @@ public class TenantMetersController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+
 
     // GET /api/v1/tenants/{tenantUserId}/meters
     [HttpGet("{tenantUserId:guid}/meters")]
@@ -136,6 +169,20 @@ public class TenantMetersController : ControllerBase
 
         return Ok(list);
     }
+
+    [HttpGet("units/{unitId:guid}/meters/current")]
+    [Authorize]
+    public async Task<ActionResult<TenantMeterResponse>> CurrentForUnit(Guid unitId)
+    {
+        var row = await _db.TenantMeterAssociations.AsNoTracking()
+            .Where(x => x.UnitId == unitId && x.EndDate == null && x.DeletedAt == null)
+            .OrderByDescending(x => x.StartDate)
+            .FirstOrDefaultAsync();
+
+        if (row is null) return NotFound();
+        return Ok(ToResponse(row));
+    }
+
 
     private static TenantMeterResponse ToResponse(TenantMeterAssociation x) => new(
         x.Id, x.TenantUserId, x.PropertyId, x.UnitId,

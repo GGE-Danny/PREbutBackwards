@@ -191,6 +191,17 @@ public class PropertiesController : ControllerBase
         return NoContent();
     }
 
+    [HttpGet("{propertyId:guid}/units/{unitId:guid}/belongs")]
+    [Authorize] // or [Authorize(Policy="property.internal.read")] if you want stricter
+    public async Task<ActionResult<bool>> UnitBelongs(Guid propertyId, Guid unitId, CancellationToken ct)
+    {
+        var exists = await _db.Units.AsNoTracking()
+            .AnyAsync(u => u.Id == unitId && u.PropertyId == propertyId && u.DeletedAt == null, ct);
+
+        return Ok(exists);
+    }
+
+
 
     private static PropertyResponse ToResponse(Property p) => new(
         p.Id, p.Name, p.Type, p.Status, p.OwnerId,

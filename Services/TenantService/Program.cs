@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Text;
 using TenantService.Infrastructure.Persistence;
+using TenantService.Infrastructure.Clients;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -79,6 +80,15 @@ builder.Services.AddAuthorization(options =>
     // Internal calls from other services (later you can require a special role or API key)
     options.AddPolicy("tenant.internal.write", p => p.RequireRole("super_admin", "manager", "sales"));
 });
+
+builder.Services.AddHttpClient("PropertyService", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:PropertyService"]!);
+});
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IPropertyServiceClient, PropertyServiceClient>();
+
 
 var app = builder.Build();
 
