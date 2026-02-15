@@ -5,5 +5,5 @@
     string Email,
     IEnumerable<string> Roles
 );
-    
+
 }
